@@ -1,7 +1,10 @@
 from datetime import datetime
 from enum import Enum
+from typing import Literal
 from uuid import UUID
 from pydantic import BaseModel, Field, HttpUrl
+
+from runway_service import RunwayVideoRatio
 
 class GenerationStatus(str, Enum):
     PENDING = "pending"
@@ -19,7 +22,7 @@ class GenerationRequest(BaseModel):
     shot_name: str = Field(min_length=1, max_length=100)
     prompt_text: str = Field(min_length=1, max_length=2000)
     reference_image_url: HttpUrl
-    ratio: str = Field(default="16:9", regex=r"^\d+:\d+$")
+    ratio: Literal[RunwayVideoRatio, "16:9"] = "16:9"
     duration: int = Field(default=5)
 
 class GenerationAcceptedResponse(BaseModel):

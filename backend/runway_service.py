@@ -5,6 +5,12 @@ from dotenv import load_dotenv
 from runwayml import AsyncRunwayML
 from runwayml.types import TaskRetrieveResponse
 
+
+type RunwayVideoRatio = Literal[
+    "1280:720", "720:1280", "1104:832", "832:1104", "960:960", "1584:672"
+]
+
+
 class RunwayService:
     """Submit image-to-video jobs and retrieve their current Runway status."""
 
@@ -19,9 +25,7 @@ class RunwayService:
         *,
         prompt_text: str,
         reference_image_url: str,
-        ratio: Literal[
-            "1280:720", "720:1280", "1104:832", "832:1104", "960:960", "1584:672"
-        ] = "1280:720",
+        ratio: RunwayVideoRatio = "1280:720",
         duration: int = 5,
     ) -> str:
         """Submit a generation request and return its Runway task ID."""
