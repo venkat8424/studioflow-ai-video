@@ -4,4 +4,6 @@ version = "0.1.0"
 requires-python = ">=3.15"
 dependencies = [
     "fastapi[standard]>=0.165.0",
+    "python-dotenv>=1.2.4",
+    "runwayml>=5.28.0",
 ]
