@@ -30,6 +30,10 @@ class GenerationAcceptedResponse(BaseModel):
     status: GenerationStatus
     created_at: datetime
 
+class GenerationStatusResponse(GenerationAcceptedResponse):
+    output_url: str | None = None
+    error_message: str | None = None
+
 class GenerationResponse(BaseModel):
     generation_id: UUID
     project_name: str
