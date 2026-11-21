@@ -20,7 +20,7 @@ class ReviewStatus(str, Enum):
 class GenerationRequest(BaseModel):
     project_name: str = Field(min_length=1, max_length=100)
     shot_name: str = Field(min_length=1, max_length=100)
-    prompt_text: str = Field(min_length=1, max_length=2000)
+    prompt_text: str = Field(min_length=1, max_length=1000)
     reference_image_url: HttpUrl
     ratio: Literal[RunwayVideoRatio, "16:9"] = "16:9"
     duration: int = Field(default=5)

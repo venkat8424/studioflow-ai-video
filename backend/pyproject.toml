@@ -6,4 +6,5 @@ dependencies = [
     "fastapi[standard]>=0.165.0",
     "python-dotenv>=1.2.4",
     "runwayml>=5.28.0",
+    "sqlmodel>=0.0.50",
 ]
