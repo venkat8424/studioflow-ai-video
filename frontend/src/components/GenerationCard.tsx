@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import type { LibraryGeneration, LibraryView } from '../types/generation'
 import { StatusBadge } from './StatusBadge'
+import { VideoPlayer } from './VideoPlayer'
 
 interface GenerationCardProps {
   generation: LibraryGeneration
@@ -38,10 +40,22 @@ function ThumbnailPlaceholder({ status }: { status: LibraryGeneration['status'] 
   )
 }
 
+function getVideoUrl({ status, output_url }: LibraryGeneration) {
+  if (status !== 'completed' || !output_url || !URL.canParse(output_url)) return null
+
+  const { protocol } = new URL(output_url)
+  return protocol === 'https:' || protocol === 'http:' ? output_url : null
+}
+
 export function GenerationCard({ generation, view = 'grid' }: GenerationCardProps) {
   const {
-    shot_name, project_name, duration, created_at, status, review_status, thumbnail, error_message,
+    shot_name, project_name, duration, created_at, status, review_status, error_message,
   } = generation
+  const [readyPreview, setReadyPreview] = useState<string | null>(null)
+  const [failedPreview, setFailedPreview] = useState<string | null>(null)
+  const [playingUrl, setPlayingUrl] = useState<string | null>(null)
+  const videoUrl = getVideoUrl(generation)
+  const previewUrl = videoUrl === failedPreview ? null : videoUrl
   const seconds = duration % 60
   const runtime = Math.floor(duration / 60) + ':' + String(seconds).padStart(2, '0')
   const cardLayout = view === 'list' ? 'flex-row' : 'flex-col'
@@ -50,13 +64,39 @@ export function GenerationCard({ generation, view = 'grid' }: GenerationCardProp
   return (
     <article className={'flex h-full min-w-0 overflow-hidden rounded-card border border-border-subtle bg-background/30 ' + cardLayout}>
       <div className={'relative grid place-items-center overflow-hidden rounded-card bg-background ' + thumbnailLayout}>
-        {status === 'completed' && thumbnail ? (
-          <img src={thumbnail} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
-        ) : (
-          <ThumbnailPlaceholder status={status} />
+        <ThumbnailPlaceholder status={status} />
+        {status === 'completed' && !previewUrl && <span className="sr-only">Video preview unavailable</span>}
+        {previewUrl && (
+          <button
+            type="button"
+            aria-label={`Play ${shot_name} from ${project_name}`}
+            aria-haspopup="dialog"
+            onClick={(event) => {
+              event.currentTarget.focus()
+              setPlayingUrl(previewUrl)
+            }}
+            className="group absolute inset-0 grid cursor-pointer place-items-center focus-visible:-outline-offset-4"
+          >
+            <video
+              key={previewUrl}
+              src={previewUrl}
+              muted
+              playsInline
+              preload="metadata"
+              aria-hidden="true"
+              onLoadedData={() => setReadyPreview(previewUrl)}
+              onError={() => setFailedPreview(previewUrl)}
+              className={'pointer-events-none absolute inset-0 size-full object-cover' + (readyPreview === previewUrl ? '' : ' opacity-0')}
+            />
+            <span className="relative grid size-11 place-items-center rounded-full border border-text-primary/35 bg-background/80 text-text-primary group-hover:bg-primary-active group-focus-visible:bg-primary-active">
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="currentColor" className="size-5">
+                <path d="M6 4.2a.7.7 0 0 1 1.06-.6l9 5.8a.7.7 0 0 1 0 1.18l-9 5.8A.7.7 0 0 1 6 15.8z" />
+              </svg>
+            </span>
+          </button>
         )}
         <span
-          className="absolute right-(--space-2) bottom-(--space-2) rounded-control bg-background/90 px-(--space-2) py-0.5 text-supporting font-semibold text-text-primary tabular-nums"
+          className="pointer-events-none absolute right-(--space-2) bottom-(--space-2) rounded-control bg-background/90 px-(--space-2) py-0.5 text-supporting font-semibold text-text-primary tabular-nums"
         >
           <span aria-hidden="true">{runtime}</span>
           <span className="sr-only">Duration {duration} seconds</span>
@@ -81,6 +121,14 @@ export function GenerationCard({ generation, view = 'grid' }: GenerationCardProp
           </time>
         </div>
       </div>
+      {playingUrl && (
+        <VideoPlayer
+          src={playingUrl}
+          shotName={shot_name}
+          projectName={project_name}
+          onClose={() => setPlayingUrl(null)}
+        />
+      )}
     </article>
   )
 }

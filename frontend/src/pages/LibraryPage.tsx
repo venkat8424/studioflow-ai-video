@@ -2,13 +2,12 @@ import { useRef, useState } from 'react'
 import { GenerationCard } from '../components/GenerationCard'
 import { LibraryPagination, LibraryToolbar } from '../components/LibraryControls'
 import type { LibraryFilters } from '../components/LibraryControls'
-import { sampleGenerations } from '../data/sampleGenerations'
-import type { LibraryGeneration, LibraryView } from '../types/generation'
+import { useLibraryGenerations } from '../hooks/useLibraryGenerations'
+import type { LibraryView } from '../types/generation'
 
 interface LibraryPageProps {
   onCreateShot: () => void
-  generations?: readonly LibraryGeneration[]
-  isLoading?: boolean
+  isActive: boolean
 }
 
 interface CreateShotButtonProps {
@@ -82,11 +81,28 @@ function LibraryEmpty({ onCreateShot, onClearFilters }: LibraryEmptyProps) {
   )
 }
 
-export function LibraryPage({
-  onCreateShot,
-  generations = sampleGenerations,
-  isLoading = false,
-}: LibraryPageProps) {
+interface LibraryErrorProps {
+  message: string
+  onRetry: () => void
+}
+
+function LibraryError({ message, onRetry }: LibraryErrorProps) {
+  return (
+    <div className="mb-(--space-4) flex flex-wrap items-center justify-between gap-(--space-3) rounded-card border border-error/40 bg-error/5 p-(--space-4)">
+      <p role="alert" className="text-error">{message}</p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="min-h-11 cursor-pointer rounded-control border border-border px-(--space-4) text-button font-semibold hover:bg-surface-elevated"
+      >
+        Retry
+      </button>
+    </div>
+  )
+}
+
+export function LibraryPage({ onCreateShot, isActive }: LibraryPageProps) {
+  const { generations, hasLoaded, isLoading, error, retry } = useLibraryGenerations(isActive)
   const searchRef = useRef<HTMLInputElement>(null)
   const [filters, setFilters] = useState(initialFilters)
   const [view, setView] = useState<LibraryView>('grid')
@@ -122,9 +138,7 @@ export function LibraryPage({
       <div className="mb-(--space-5) flex flex-col gap-(--space-4) border-b border-border-subtle pb-(--space-4) sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-page-title font-semibold">Generation Library</h2>
-          <p className="mt-(--space-1) text-text-secondary">
-            {generations === sampleGenerations ? 'Sample AI video generations' : 'All your AI video generations'}
-          </p>
+          <p className="mt-(--space-1) text-text-secondary">All your AI video generations</p>
         </div>
         <CreateShotButton onClick={onCreateShot} label="Create New Shot" />
       </div>
@@ -136,7 +150,9 @@ export function LibraryPage({
         onFilterChange={updateFilter}
         onViewChange={setView}
       />
-      {isLoading ? <LibraryLoading view={view} /> : matches.length === 0 ? (
+      {error && <LibraryError message={error} onRetry={retry} />}
+      {isLoading && <LibraryLoading view={view} />}
+      {hasLoaded && (matches.length === 0 ? (
         <LibraryEmpty
           onCreateShot={onCreateShot}
           onClearFilters={generations.length > 0 ? clearFilters : undefined}
@@ -149,8 +165,8 @@ export function LibraryPage({
             </li>
           ))}
         </ul>
-      )}
-      {!isLoading && (
+      ))}
+      {hasLoaded && (
         <LibraryPagination
           page={currentPage}
           pageSize={pageSize}

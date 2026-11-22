@@ -48,7 +48,7 @@ function App() {
               className={'rounded-panel border border-border-subtle bg-surface px-(--space-4) py-(--space-5) shadow-card md:px-(--space-5)' + (id === 'library' ? '' : ' mx-auto max-w-(--create-width)')}
             >
               {id === 'library' ? (
-                <LibraryPage onCreateShot={openCreateTab} />
+                <LibraryPage onCreateShot={openCreateTab} isActive={activeTab === id} />
               ) : (
                 <>
                   <h2 className="text-page-title font-semibold">{title}</h2>
