@@ -7,25 +7,53 @@ interface VideoPlayerProps {
   onClose: () => void
 }
 
-export function VideoPlayer({ src, shotName, projectName, onClose }: VideoPlayerProps) {
-  const titleId = useId()
-  const projectId = useId()
-  const dialogRef = useRef<HTMLDialogElement>(null)
+interface InlineVideoPlayerProps {
+  src: string
+  label: string
+  poster?: string
+}
+
+export function InlineVideoPlayer({ src, label, poster }: InlineVideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [failed, setFailed] = useState(false)
 
   useLayoutEffect(() => {
-    const dialog = dialogRef.current
     const video = videoRef.current
+    return () => video?.pause()
+  }, [src])
+
+  return failed ? (
+    <div role="status" className="grid aspect-video max-h-[70dvh] place-items-center rounded-control bg-background p-(--space-4) text-center text-text-secondary">
+      The video could not be loaded. Its link may have expired.
+    </div>
+  ) : (
+    <video
+      ref={videoRef}
+      src={src}
+      poster={poster}
+      controls
+      playsInline
+      preload="metadata"
+      aria-label={label}
+      onError={() => setFailed(true)}
+      className="block aspect-video max-h-[70dvh] w-full rounded-control bg-background object-contain"
+    />
+  )
+}
+
+export function VideoPlayer({ src, shotName, projectName, onClose }: VideoPlayerProps) {
+  const titleId = useId()
+  const projectId = useId()
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  useLayoutEffect(() => {
+    const dialog = dialogRef.current
     dialog?.showModal()
-    return () => {
-      video?.pause()
-      dialog?.close()
-    }
+    return () => dialog?.close()
   }, [])
 
   function closePlayer() {
-    videoRef.current?.pause()
+    dialogRef.current?.querySelector('video')?.pause()
     dialogRef.current?.close()
     onClose()
   }
@@ -61,22 +89,7 @@ export function VideoPlayer({ src, shotName, projectName, onClose }: VideoPlayer
             </svg>
           </button>
         </header>
-        {failed ? (
-          <div role="status" className="grid aspect-video max-h-[70dvh] place-items-center rounded-control bg-background p-(--space-4) text-center text-text-secondary">
-            The video could not be loaded. Its link may have expired.
-          </div>
-        ) : (
-          <video
-            ref={videoRef}
-            src={src}
-            controls
-            playsInline
-            preload="metadata"
-            aria-label={`${shotName} video`}
-            onError={() => setFailed(true)}
-            className="block aspect-video max-h-[70dvh] w-full rounded-control bg-background object-contain"
-          />
-        )}
+        <InlineVideoPlayer key={src} src={src} label={`${shotName} video`} />
       </div>
     </dialog>
   )

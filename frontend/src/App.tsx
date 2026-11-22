@@ -3,12 +3,12 @@ import { AppHeader } from './components/AppHeader'
 import { GenerationForm } from './components/GenerationForm'
 import { NavigationTabs } from './components/NavigationTabs'
 import { LibraryPage } from './pages/LibraryPage'
+import { ReviewPage } from './pages/ReviewPage'
 
 const workspaceTabs = [
   {
     id: 'create',
     label: 'Create',
-    title: 'Create a new shot',
   },
   {
     id: 'library',
@@ -17,8 +17,6 @@ const workspaceTabs = [
   {
     id: 'review',
     label: 'Review',
-    title: 'Review',
-    message: 'The review workflow is not implemented yet.',
   },
 ]
 
@@ -37,7 +35,7 @@ function App() {
         <NavigationTabs tabs={workspaceTabs} activeTab={activeTab} onTabChange={setActiveTab} />
 
         <main className="w-full min-w-0">
-          {workspaceTabs.map(({ id, title, message }) => (
+          {workspaceTabs.map(({ id }) => (
             <section
               key={id}
               id={'panel-' + id}
@@ -45,18 +43,16 @@ function App() {
               aria-labelledby={'tab-' + id}
               hidden={activeTab !== id}
               tabIndex={0}
-              className={'rounded-panel border border-border-subtle bg-surface px-(--space-4) py-(--space-5) shadow-card md:px-(--space-5)' + (id === 'library' ? '' : ' mx-auto max-w-(--create-width)')}
+              className={'rounded-panel border border-border-subtle bg-surface px-(--space-4) py-(--space-5) shadow-card md:px-(--space-5)' + (id === 'create' ? ' mx-auto max-w-(--create-width)' : '')}
             >
               {id === 'library' ? (
                 <LibraryPage onCreateShot={openCreateTab} isActive={activeTab === id} />
+              ) : id === 'review' ? (
+                <ReviewPage isActive={activeTab === id} />
               ) : (
                 <>
-                  <h2 className="text-page-title font-semibold">{title}</h2>
-                  {id === 'create' ? (
-                    <GenerationForm />
-                  ) : (
-                    <p className="mt-(--space-2) text-text-secondary">{message}</p>
-                  )}
+                  <h2 className="text-page-title font-semibold">Create a new shot</h2>
+                  <GenerationForm />
                 </>
               )}
             </section>
