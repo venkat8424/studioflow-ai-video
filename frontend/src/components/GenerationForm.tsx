@@ -1,5 +1,7 @@
-import { useId, useState } from 'react'
+import { useId, useRef, useState } from 'react'
 import type { ChangeEvent, SubmitEvent } from 'react'
+import { submitGeneration } from '../api/generations'
+import type { GenerationAcceptedResponse } from '../types/generation'
 
 const textFields = {
   projectName: {
@@ -29,6 +31,14 @@ type RequiredField = (typeof requiredFields)[number]
 type FieldValues = Record<RequiredField, string>
 type FieldErrors = Partial<FieldValues>
 
+const initialValues: FieldValues = {
+  projectName: '',
+  shotName: '',
+  prompt: '',
+  referenceImageUrl: '',
+}
+const maxReferenceUrlLength = 2083
+
 const ratioOptions = [
   { value: '1280:720', label: '16:9 Landscape' },
   { value: '720:1280', label: '9:16 Portrait' },
@@ -40,7 +50,7 @@ const durationOptions = [
 type Ratio = (typeof ratioOptions)[number]['value']
 type Duration = (typeof durationOptions)[number]['value']
 
-const controlClass = 'w-full min-w-0 rounded-control border border-border bg-input px-(--space-3) text-text-primary placeholder:text-text-muted aria-[invalid=true]:border-error'
+const controlClass = 'w-full min-w-0 rounded-control border border-border bg-input px-(--space-3) text-text-primary placeholder:text-text-muted aria-[invalid=true]:border-error disabled:cursor-not-allowed disabled:opacity-70'
 const labelClass = 'mb-(--space-2) block text-label font-medium text-text-secondary'
 
 function validate(values: FieldValues): FieldErrors {
@@ -58,6 +68,8 @@ function validate(values: FieldValues): FieldErrors {
   const imageUrl = values.referenceImageUrl.trim()
   if (!imageUrl) {
     errors.referenceImageUrl = 'Please enter a reference image URL.'
+  } else if (imageUrl.length > maxReferenceUrlLength) {
+    errors.referenceImageUrl = `Reference image URL must be ${maxReferenceUrlLength} characters or fewer.`
   } else if (!/^https:\/\/[^/\\\s][^\\\s]*$/i.test(imageUrl) || !URL.canParse(imageUrl)) {
     errors.referenceImageUrl = 'Please provide a valid HTTPS image URL.'
   }
@@ -82,6 +94,7 @@ interface GenerationSelectProps<T extends string | number> {
   label: string
   options: readonly { value: T; label: string }[]
   value: T
+  disabled: boolean
   onChange: (value: T) => void
 }
 
@@ -90,6 +103,7 @@ function GenerationSelect<T extends string | number>({
   label,
   options,
   value,
+  disabled,
   onChange,
 }: GenerationSelectProps<T>) {
   return (
@@ -99,6 +113,7 @@ function GenerationSelect<T extends string | number>({
         <select
           id={id}
           value={value}
+          disabled={disabled}
           onChange={(event) => {
             const option = options.find(({ value }) => String(value) === event.target.value)
             if (option) onChange(option.value)
@@ -120,26 +135,21 @@ function GenerationSelect<T extends string | number>({
   )
 }
 
-interface GenerationFormProps {
-  isSubmitting?: boolean
-}
-
-export function GenerationForm({ isSubmitting = false }: GenerationFormProps) {
+export function GenerationForm() {
   const id = useId()
-  const [values, setValues] = useState<FieldValues>({
-    projectName: '',
-    shotName: '',
-    prompt: '',
-    referenceImageUrl: '',
-  })
+  const submitting = useRef(false)
+  const [values, setValues] = useState(initialValues)
   const [touched, setTouched] = useState<Partial<Record<RequiredField, boolean>>>({})
   const [attempted, setAttempted] = useState(false)
   const [ratio, setRatio] = useState<Ratio>('1280:720')
   const [duration, setDuration] = useState<Duration>(5)
-  const [showSubmissionNotice, setShowSubmissionNotice] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submissionError, setSubmissionError] = useState<string | null>(null)
+  const [generation, setGeneration] = useState<GenerationAcceptedResponse | null>(null)
 
   const errors = validate(values)
   const firstInvalid = requiredFields.find((field) => errors[field])
+  const formLocked = isSubmitting || generation !== null
   const referenceHelpId = id + '-reference-help'
 
   function fieldId(field: RequiredField) {
@@ -157,29 +167,57 @@ export function GenerationForm({ isSubmitting = false }: GenerationFormProps) {
       name: field,
       value: values[field],
       required: true,
+      disabled: formLocked,
       'aria-invalid': Boolean(error),
       'aria-describedby': [helpId, error && fieldId(field) + '-error'].filter(Boolean).join(' ') || undefined,
       onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { value } = event.currentTarget
         setValues((current) => ({ ...current, [field]: value }))
-        setShowSubmissionNotice(false)
       },
       onBlur: () => setTouched((current) => ({ ...current, [field]: true })),
     }
   }
 
-  function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
+  async function handleSubmit(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault()
-    if (isSubmitting) return
+    if (submitting.current || generation) return
 
     setAttempted(true)
+    setSubmissionError(null)
     if (firstInvalid) {
       const input = event.currentTarget.elements.namedItem(firstInvalid)
       if (input instanceof HTMLElement) input.focus()
       return
     }
 
-    setShowSubmissionNotice(true)
+    submitting.current = true
+    setIsSubmitting(true)
+    try {
+      const accepted = await submitGeneration({
+        project_name: values.projectName.trim(),
+        shot_name: values.shotName.trim(),
+        prompt_text: values.prompt,
+        reference_image_url: values.referenceImageUrl.trim(),
+        ratio,
+        duration,
+      })
+      setGeneration(accepted)
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error.message : 'Could not submit the generation request.')
+    } finally {
+      submitting.current = false
+      setIsSubmitting(false)
+    }
+  }
+
+  function startAnotherGeneration() {
+    setValues(initialValues)
+    setTouched({})
+    setAttempted(false)
+    setRatio('1280:720')
+    setDuration(5)
+    setGeneration(null)
+    requestAnimationFrame(() => document.getElementById(fieldId('projectName'))?.focus())
   }
 
   return (
@@ -238,6 +276,7 @@ export function GenerationForm({ isSubmitting = false }: GenerationFormProps) {
         <input
           {...bindField('referenceImageUrl', referenceHelpId)}
           type="url"
+          maxLength={maxReferenceUrlLength}
           placeholder="https://example.com/reference.jpg"
           spellCheck={false}
           className={controlClass + ' min-h-11'}
@@ -246,8 +285,8 @@ export function GenerationForm({ isSubmitting = false }: GenerationFormProps) {
       </div>
 
       <div className="grid gap-(--space-4) md:grid-cols-2">
-        <GenerationSelect id={id + '-ratio'} label="Aspect ratio" options={ratioOptions} value={ratio} onChange={setRatio} />
-        <GenerationSelect id={id + '-duration'} label="Duration" options={durationOptions} value={duration} onChange={setDuration} />
+        <GenerationSelect id={id + '-ratio'} label="Aspect ratio" options={ratioOptions} value={ratio} onChange={setRatio} disabled={formLocked} />
+        <GenerationSelect id={id + '-duration'} label="Duration" options={durationOptions} value={duration} onChange={setDuration} disabled={formLocked} />
       </div>
 
       <div className="border-t border-border-subtle pt-(--space-4)">
@@ -258,8 +297,8 @@ export function GenerationForm({ isSubmitting = false }: GenerationFormProps) {
           {/* Keep Generate focusable while invalid so an attempt can reveal field errors. */}
           <button
             type="submit"
-            disabled={isSubmitting}
-            aria-disabled={Boolean(firstInvalid) || isSubmitting}
+            disabled={formLocked}
+            aria-disabled={Boolean(firstInvalid) || formLocked}
             className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-(--space-2) rounded-control bg-primary px-(--space-5) text-button font-semibold text-text-primary hover:bg-[color-mix(in_srgb,var(--color-primary-hover)_40%,var(--color-primary))] active:bg-primary-active aria-disabled:cursor-not-allowed aria-disabled:bg-primary/55 aria-disabled:hover:bg-primary/55"
           >
             {isSubmitting ? (
@@ -269,16 +308,38 @@ export function GenerationForm({ isSubmitting = false }: GenerationFormProps) {
                 <path d="M8 2.5a.5.5 0 0 1 .47.33l1.35 3.7 3.68 1.35a.5.5 0 0 1 0 .94l-3.68 1.35-1.35 3.68a.5.5 0 0 1-.94 0l-1.35-3.68L2.5 8.82a.5.5 0 0 1 0-.94l3.68-1.35 1.35-3.7A.5.5 0 0 1 8 2.5Zm7.3 8.5a.4.4 0 0 1 .38.26l.78 2.13 2.12.78a.4.4 0 0 1 0 .75l-2.12.78-.78 2.12a.4.4 0 0 1-.75 0l-.78-2.12-2.13-.78a.4.4 0 0 1 0-.75l2.13-.78.78-2.13a.4.4 0 0 1 .37-.26Z" />
               </svg>
             )}
-            {isSubmitting ? 'Submitting…' : 'Generate'}
+            {isSubmitting ? 'Submitting...' : 'Generate'}
           </button>
         </div>
+        {submissionError && (
+          <p role="alert" className="mt-(--space-3) text-supporting text-error">{submissionError}</p>
+        )}
         <div role="status">
-          {showSubmissionNotice && (
-            <p className="mt-(--space-2) text-supporting text-text-secondary">
-              Generation submission is not available yet.
-            </p>
+          {generation && (
+            <div className="mt-(--space-4) grid gap-(--space-2) text-supporting">
+              <p className="font-semibold text-success">Video generation submitted successfully.</p>
+              <dl className="grid gap-(--space-1) text-text-secondary">
+                <div className="flex flex-wrap gap-x-(--space-2)">
+                  <dt>Generation ID</dt>
+                  <dd className="min-w-0 wrap-anywhere text-text-primary">{generation.generation_id}</dd>
+                </div>
+                <div className="flex gap-(--space-2)">
+                  <dt>Status</dt>
+                  <dd className="text-text-primary capitalize">{generation.status}</dd>
+                </div>
+              </dl>
+            </div>
           )}
         </div>
+        {generation && (
+          <button
+            type="button"
+            onClick={startAnotherGeneration}
+            className="mt-(--space-3) min-h-11 w-full cursor-pointer rounded-control border border-border px-(--space-4) text-button font-semibold hover:bg-surface-elevated sm:w-auto"
+          >
+            Create another shot
+          </button>
+        )}
       </div>
     </form>
   )

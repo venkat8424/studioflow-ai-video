@@ -1,0 +1,26 @@
+export type GenerationRatio =
+  | '1280:720'
+  | '720:1280'
+  | '1104:832'
+  | '832:1104'
+  | '960:960'
+  | '1584:672'
+  | '16:9'
+
+export const generationStatuses = ['pending', 'processing', 'completed', 'failed'] as const
+export type GenerationStatus = (typeof generationStatuses)[number]
+
+export interface GenerationRequest {
+  project_name: string
+  shot_name: string
+  prompt_text: string
+  reference_image_url: string
+  ratio?: GenerationRatio
+  duration?: number
+}
+
+export interface GenerationAcceptedResponse {
+  generation_id: string
+  status: GenerationStatus
+  created_at: string
+}
