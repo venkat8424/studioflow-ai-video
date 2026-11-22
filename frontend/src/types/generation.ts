@@ -9,6 +9,7 @@ export type GenerationRatio =
 
 export const generationStatuses = ['pending', 'processing', 'completed', 'failed'] as const
 export type GenerationStatus = (typeof generationStatuses)[number]
+export type ReviewStatus = 'unreviewed' | 'approved' | 'rejected'
 
 export interface GenerationRequest {
   project_name: string
@@ -23,4 +24,13 @@ export interface GenerationAcceptedResponse {
   generation_id: string
   status: GenerationStatus
   created_at: string
+}
+
+export interface LibraryGeneration extends GenerationAcceptedResponse {
+  project_name: string
+  shot_name: string
+  review_status: ReviewStatus
+  duration: number
+  thumbnail?: string
+  error_message?: string
 }
