@@ -9,7 +9,9 @@ export type GenerationRatio =
 
 export const generationStatuses = ['pending', 'processing', 'completed', 'failed'] as const
 export type GenerationStatus = (typeof generationStatuses)[number]
-export type ReviewStatus = 'unreviewed' | 'approved' | 'rejected'
+export const reviewStatuses = ['unreviewed', 'approved', 'rejected'] as const
+export type ReviewStatus = (typeof reviewStatuses)[number]
+export type LibraryView = 'grid' | 'list'
 
 export interface GenerationRequest {
   project_name: string

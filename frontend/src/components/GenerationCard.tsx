@@ -1,8 +1,9 @@
-import type { LibraryGeneration } from '../types/generation'
+import type { LibraryGeneration, LibraryView } from '../types/generation'
 import { StatusBadge } from './StatusBadge'
 
 interface GenerationCardProps {
   generation: LibraryGeneration
+  view?: LibraryView
 }
 
 const dateFormat = new Intl.DateTimeFormat('en-US', {
@@ -37,16 +38,18 @@ function ThumbnailPlaceholder({ status }: { status: LibraryGeneration['status'] 
   )
 }
 
-export function GenerationCard({ generation }: GenerationCardProps) {
+export function GenerationCard({ generation, view = 'grid' }: GenerationCardProps) {
   const {
     shot_name, project_name, duration, created_at, status, review_status, thumbnail, error_message,
   } = generation
   const seconds = duration % 60
   const runtime = Math.floor(duration / 60) + ':' + String(seconds).padStart(2, '0')
+  const cardLayout = view === 'list' ? 'flex-row' : 'flex-col'
+  const thumbnailLayout = view === 'list' ? 'min-h-24 w-20 shrink-0 sm:w-44 lg:w-56' : 'aspect-[14/5]'
 
   return (
-    <article className="flex h-full min-w-0 flex-col overflow-hidden rounded-card border border-border-subtle bg-background/30">
-      <div className="relative grid aspect-[14/5] place-items-center overflow-hidden rounded-card bg-background">
+    <article className={'flex h-full min-w-0 overflow-hidden rounded-card border border-border-subtle bg-background/30 ' + cardLayout}>
+      <div className={'relative grid place-items-center overflow-hidden rounded-card bg-background ' + thumbnailLayout}>
         {status === 'completed' && thumbnail ? (
           <img src={thumbnail} alt="" loading="lazy" className="absolute inset-0 size-full object-cover" />
         ) : (
@@ -60,7 +63,7 @@ export function GenerationCard({ generation }: GenerationCardProps) {
         </span>
       </div>
 
-      <div className="flex flex-1 flex-col gap-(--space-2) px-(--space-3) py-(--space-2)">
+      <div className="flex min-w-0 flex-1 flex-col gap-(--space-2) px-(--space-3) py-(--space-2)">
         <div className="min-w-0">
           <h3 className="text-card-heading leading-tight font-semibold wrap-anywhere">{shot_name}</h3>
           <p className="mt-0.5 text-supporting wrap-anywhere text-text-secondary">{project_name}</p>
