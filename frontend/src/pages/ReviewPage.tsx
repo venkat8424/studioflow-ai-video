@@ -1,10 +1,10 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import { getGenerationStatus, submitGenerationReview } from '../api/generations'
 import { StatusBadge } from '../components/StatusBadge'
 import { InlineVideoPlayer } from '../components/VideoPlayer'
-import { sampleReviews } from '../data/sampleReviews'
-import type { ReviewGeneration } from '../data/sampleReviews'
-import type { ReviewStatus } from '../types/generation'
+import type { GenerationCatalog } from '../hooks/useLibraryGenerations'
+import type { GenerationResponse, GenerationStatusResponse, ReviewRequest, ReviewResponse, ReviewStatus } from '../types/generation'
 
 const reviewFilters = [
   { status: 'unreviewed', label: 'To Review' },
@@ -16,27 +16,23 @@ const dateFormat = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeS
 
 type ReviewDecision = Exclude<ReviewStatus, 'unreviewed'>
 
-interface ReviewSubmission {
-  review_status: ReviewDecision
-  comments: string | null
-}
-
 interface ReviewPageProps {
   isActive: boolean
-  generations?: readonly ReviewGeneration[]
-  submitReview?: (generationId: string, review: ReviewSubmission) => Promise<unknown>
+  catalog: GenerationCatalog
+  onReviewSaved: (review: ReviewResponse) => void
 }
 
 type SubmissionState =
   | { id: string; phase: 'saving'; decision: ReviewDecision }
+  | { id: string; phase: 'saved' }
   | { id: string; phase: 'error'; message: string }
 
-function submitPreviewReview(): Promise<never> {
-  return Promise.reject(new Error('Review submission is unavailable in this preview.'))
-}
+type DetailState =
+  | { id: string; attempt: number; data: GenerationStatusResponse }
+  | { id: string; attempt: number; error: string }
 
 interface QueueCardProps {
-  generation: ReviewGeneration
+  generation: GenerationResponse
   selected: boolean
   onSelect: () => void
 }
@@ -50,11 +46,22 @@ function QueueCard({ generation, selected, onSelect }: QueueCardProps) {
       onClick={onSelect}
       className="grid w-full cursor-pointer grid-cols-[minmax(0,2fr)_minmax(0,3fr)] items-center gap-(--space-3) rounded-card border border-transparent bg-background/30 p-(--space-2) text-left hover:bg-surface-elevated aria-pressed:border-primary-hover aria-pressed:bg-primary/15"
     >
-      <span className="relative block aspect-video overflow-hidden rounded-control bg-background">
-        <img src={generation.thumbnail} alt="" className="size-full object-cover" />
+      <span className="relative grid aspect-video place-items-center overflow-hidden rounded-control bg-background">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" className="size-6 text-text-muted">
+          <path d="M3 8h18v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8Zm0 0 2-5h16l-2 5M9 3 7 8m8-5-2 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <img
+          key={generation.reference_image_url}
+          src={generation.reference_image_url}
+          alt=""
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onError={(event) => { event.currentTarget.hidden = true }}
+          className="absolute inset-0 size-full object-cover"
+        />
         <span className="absolute right-1 bottom-1 rounded bg-background/90 px-1.5 text-supporting font-semibold tabular-nums">
           <span className="sr-only">Duration </span>
-          0:{String(generation.duration).padStart(2, '0')}
+          {Math.floor(generation.duration / 60)}:{String(generation.duration % 60).padStart(2, '0')}
         </span>
       </span>
       <span className="min-w-0">
@@ -78,7 +85,7 @@ function MetadataItem({ label, children }: { label: string; children: ReactNode 
   )
 }
 
-function GenerationMetadata({ generation }: { generation: ReviewGeneration }) {
+function GenerationMetadata({ generation }: { generation: GenerationResponse }) {
   const aspectRatio = generation.ratio === '1280:720' ? '16:9 (1280 × 720)' : generation.ratio
 
   return (
@@ -99,33 +106,70 @@ function GenerationMetadata({ generation }: { generation: ReviewGeneration }) {
   )
 }
 
-export function ReviewPage({
-  isActive, generations = sampleReviews, submitReview = submitPreviewReview,
-}: ReviewPageProps) {
-  const [filter, setFilter] = useState<ReviewStatus>('unreviewed')
-  const [project, setProject] = useState('')
-  const [selection, setSelection] = useState<string | null>(null)
+function ReviewError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="mb-(--space-4) flex flex-wrap items-center justify-between gap-(--space-3) rounded-control border border-error/40 bg-error/5 p-(--space-3)">
+      <p role="alert" className="text-error">{message}</p>
+      <button type="button" onClick={onRetry} className="min-h-11 cursor-pointer rounded-control border border-border px-(--space-3) text-button hover:bg-surface-elevated">
+        Retry
+      </button>
+    </div>
+  )
+}
+
+export function ReviewPage({ isActive, catalog, onReviewSaved }: ReviewPageProps) {
+  const { generations, hasLoaded, isLoading, error, retry } = catalog
+  const [{ filter, project: selectedProject, selection }, setView] = useState<{
+    filter: ReviewStatus; project: string; selection: string | null
+  }>({ filter: 'unreviewed', project: '', selection: null })
   const [drafts, setDrafts] = useState<Record<string, string>>({})
   const [submission, setSubmission] = useState<SubmissionState | null>(null)
+  const [detail, setDetail] = useState<DetailState | null>(null)
+  const [detailAttempt, setDetailAttempt] = useState(0)
   const submissionPending = useRef(false)
 
-  const projectNames = [...new Set(generations.map(({ project_name }) => project_name))].sort()
-  const projectGenerations = generations.filter((generation) => !project || generation.project_name === project)
+  const completedGenerations = generations.filter(({ status }) => status === 'completed')
+  const projectNames = [...new Set(completedGenerations.map(({ project_name }) => project_name))].sort()
+  const project = projectNames.includes(selectedProject) ? selectedProject : ''
+  const projectGenerations = completedGenerations.filter((generation) => !project || generation.project_name === project)
   const queue = projectGenerations.filter((generation) => generation.review_status === filter)
   const selected = queue.find(({ generation_id }) => generation_id === selection) ?? queue[0]
-  const comments = selected ? drafts[selected.generation_id] ?? selected.review_comments ?? '' : ''
-  const selectedSubmission = submission?.id === selected?.generation_id ? submission : null
-  const actionsDisabled = selected?.status !== 'completed' || submission?.phase === 'saving'
+  const selectedId = selected?.generation_id
+  const selectedDetail = detail && detail.id === selectedId && detail.attempt === detailAttempt ? detail : null
+  const liveGeneration = selectedDetail && 'data' in selectedDetail ? selectedDetail.data : null
+  const videoUrl = liveGeneration ? liveGeneration.output_url : selected?.output_url
+  const draft = selectedId ? drafts[selectedId] : undefined
+  const comments = draft ?? selected?.review_comments ?? ''
+  const selectedSubmission = submission?.id === selectedId ? submission : null
+  const isCompleted = selected?.status === 'completed' && (!liveGeneration || liveGeneration.status === 'completed')
+  const actionsDisabled = !isCompleted || !selectedDetail || submission?.phase === 'saving'
     || comments.length > commentLimit
 
+  useEffect(() => {
+    if (!isActive || !selectedId) return
+    const controller = new AbortController()
+    const { signal } = controller
+    void getGenerationStatus(selectedId, signal).then((data) => {
+      if (signal.aborted) return
+      setDetail({ id: selectedId, attempt: detailAttempt, data })
+      if (data.status !== 'completed') retry()
+    }, (cause: unknown) => {
+      if (signal.aborted) return
+      setDetail({
+        id: selectedId,
+        attempt: detailAttempt,
+        error: cause instanceof Error ? cause.message : 'Could not load the generation details.',
+      })
+    })
+    return () => controller.abort()
+  }, [isActive, selectedId, detailAttempt, retry])
+
   function updateFilters(nextFilter: ReviewStatus, nextProject: string) {
-    const nextQueue = generations.filter((generation) => generation.review_status === nextFilter
+    const nextQueue = completedGenerations.filter((generation) => generation.review_status === nextFilter
       && (!nextProject || generation.project_name === nextProject))
     const nextSelection = nextQueue.find(({ generation_id }) => generation_id === selected?.generation_id)
       ?? nextQueue[0]
-    setFilter(nextFilter)
-    setProject(nextProject)
-    setSelection(nextSelection?.generation_id ?? null)
+    setView({ filter: nextFilter, project: nextProject, selection: nextSelection?.generation_id ?? null })
   }
 
   async function handleReview(decision: ReviewDecision) {
@@ -133,10 +177,20 @@ export function ReviewPage({
 
     const id = selected.generation_id
     submissionPending.current = true
+    setView((current) => ({ ...current, selection: id }))
     setSubmission({ id, phase: 'saving', decision })
     try {
-      await submitReview(id, { review_status: decision, comments: comments.trim() ? comments : null })
-      setSubmission(null)
+      const request: ReviewRequest = { review_status: decision }
+      if (draft !== undefined) request.comments = draft.trim() ? draft : null
+      const saved = await submitGenerationReview(id, request)
+      onReviewSaved(saved)
+      setDrafts((current) => {
+        const remaining = { ...current }
+        delete remaining[id]
+        return remaining
+      })
+      setView((current) => current.selection === id ? { ...current, filter: saved.review_status } : current)
+      setSubmission({ id, phase: 'saved' })
     } catch (error) {
       setSubmission({
         id,
@@ -154,7 +208,6 @@ export function ReviewPage({
         <div>
           <h2 className="text-page-title font-semibold">Review Queue</h2>
           <p className="mt-(--space-1) text-text-secondary">Review and approve your generated videos</p>
-          <p className="mt-(--space-1) text-supporting text-text-muted">Sample generations</p>
         </div>
 
         <div className="grid min-w-0 gap-(--space-3) sm:flex sm:items-center">
@@ -188,6 +241,7 @@ export function ReviewPage({
         </div>
       </header>
 
+      {error && <ReviewError message={error} onRetry={retry} />}
       <div className="grid min-w-0 gap-(--space-4) lg:grid-cols-[minmax(0,2fr)_minmax(0,4.6fr)] lg:gap-0">
         <div className="min-w-0 border-b border-border-subtle pb-(--space-4) lg:border-r lg:border-b-0 lg:pr-(--space-4) lg:pb-0">
           <ul aria-label="Generations to review" className="grid max-h-80 content-start gap-(--space-2) overflow-y-auto p-1 lg:max-h-125">
@@ -196,26 +250,34 @@ export function ReviewPage({
                 <QueueCard
                   generation={generation}
                   selected={generation === selected}
-                  onSelect={() => setSelection(generation.generation_id)}
+                  onSelect={() => setView((current) => ({ ...current, selection: generation.generation_id }))}
                 />
               </li>
             ))}
           </ul>
-          {!queue.length && <p role="status" className="px-(--space-2) text-text-secondary">No generations match these filters.</p>}
+          {isLoading && <p role="status" className="px-(--space-2) text-text-secondary">Loading generations...</p>}
+          {hasLoaded && !queue.length && (
+            <p role="status" className="px-(--space-2) text-text-secondary">
+              {completedGenerations.length ? 'No generations match these filters.' : 'Completed generations will appear here.'}
+            </p>
+          )}
         </div>
 
         <section id="review-details" aria-label="Selected generation" className="min-w-0 lg:pl-(--space-4)">
           {selected && (
             <div className="grid min-w-0 gap-(--space-5)">
+              {selectedDetail && 'error' in selectedDetail && (
+                <ReviewError message={selectedDetail.error} onRetry={() => setDetailAttempt((attempt) => attempt + 1)} />
+              )}
               <div className="grid min-w-0 items-start gap-(--space-4) xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-                {isActive && (selected.video ? (
-                  <InlineVideoPlayer key={selected.generation_id} src={selected.video} poster={selected.thumbnail} label={`${selected.shot_name} video`} />
+                {isActive && (selectedDetail && videoUrl && isCompleted ? (
+                  <InlineVideoPlayer key={selected.generation_id + videoUrl} src={videoUrl} label={`${selected.shot_name} video`} />
                 ) : (
-                  <p className="grid aspect-video place-items-center rounded-control bg-background p-(--space-4) text-center text-text-secondary">
-                    Video preview is unavailable.
+                  <p role="status" className="grid aspect-video place-items-center rounded-control bg-background p-(--space-4) text-center text-text-secondary">
+                    {selectedDetail ? 'Video preview is unavailable.' : 'Loading video details...'}
                   </p>
                 ))}
-                <GenerationMetadata generation={selected} />
+                <GenerationMetadata generation={liveGeneration ? { ...selected, status: liveGeneration.status } : selected} />
               </div>
 
               <div>
@@ -238,7 +300,7 @@ export function ReviewPage({
                       setDrafts((current) => ({ ...current, [selected.generation_id]: value }))
                     }}
                     maxLength={commentLimit}
-                    readOnly={selected.status !== 'completed' || selectedSubmission?.phase === 'saving'}
+                    readOnly={!isCompleted || selectedSubmission?.phase === 'saving'}
                     placeholder="Add your review feedback..."
                     aria-describedby="review-comment-count"
                     className="block min-h-20 w-full resize-y rounded-control px-(--space-3) py-(--space-2) placeholder:text-text-muted focus-visible:-outline-offset-2"
@@ -276,7 +338,10 @@ export function ReviewPage({
                 </div>
                 <div role="status">
                   {selectedSubmission?.phase === 'saving' && <span className="sr-only">Saving review...</span>}
-                  {selected.status !== 'completed' && (
+                  {selectedSubmission?.phase === 'saved' && (
+                    <p className="mt-(--space-2) text-supporting text-success">Review saved successfully.</p>
+                  )}
+                  {!isCompleted && (
                     <p className="mt-(--space-2) text-supporting text-text-secondary">
                       Review is available after generation completes.
                     </p>

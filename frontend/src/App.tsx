@@ -4,6 +4,7 @@ import { GenerationForm } from './components/GenerationForm'
 import { NavigationTabs } from './components/NavigationTabs'
 import { LibraryPage } from './pages/LibraryPage'
 import { ReviewPage } from './pages/ReviewPage'
+import { useLibraryGenerations } from './hooks/useLibraryGenerations'
 
 const workspaceTabs = [
   {
@@ -22,6 +23,7 @@ const workspaceTabs = [
 
 function App() {
   const [activeTab, setActiveTab] = useState('create')
+  const catalog = useLibraryGenerations(activeTab !== 'create', activeTab === 'library')
 
   function openCreateTab() {
     setActiveTab('create')
@@ -46,9 +48,9 @@ function App() {
               className={'rounded-panel border border-border-subtle bg-surface px-(--space-4) py-(--space-5) shadow-card md:px-(--space-5)' + (id === 'create' ? ' mx-auto max-w-(--create-width)' : '')}
             >
               {id === 'library' ? (
-                <LibraryPage onCreateShot={openCreateTab} isActive={activeTab === id} />
+                <LibraryPage onCreateShot={openCreateTab} catalog={catalog} />
               ) : id === 'review' ? (
-                <ReviewPage isActive={activeTab === id} />
+                <ReviewPage isActive={activeTab === id} catalog={catalog} onReviewSaved={catalog.applyReview} />
               ) : (
                 <>
                   <h2 className="text-page-title font-semibold">Create a new shot</h2>

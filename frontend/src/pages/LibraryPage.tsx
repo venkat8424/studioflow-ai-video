@@ -2,12 +2,12 @@ import { useRef, useState } from 'react'
 import { GenerationCard } from '../components/GenerationCard'
 import { LibraryPagination, LibraryToolbar } from '../components/LibraryControls'
 import type { LibraryFilters } from '../components/LibraryControls'
-import { useLibraryGenerations } from '../hooks/useLibraryGenerations'
+import type { GenerationCatalog } from '../hooks/useLibraryGenerations'
 import type { LibraryView } from '../types/generation'
 
 interface LibraryPageProps {
   onCreateShot: () => void
-  isActive: boolean
+  catalog: GenerationCatalog
 }
 
 interface CreateShotButtonProps {
@@ -101,8 +101,8 @@ function LibraryError({ message, onRetry }: LibraryErrorProps) {
   )
 }
 
-export function LibraryPage({ onCreateShot, isActive }: LibraryPageProps) {
-  const { generations, hasLoaded, isLoading, error, retry } = useLibraryGenerations(isActive)
+export function LibraryPage({ onCreateShot, catalog }: LibraryPageProps) {
+  const { generations, hasLoaded, isLoading, error, retry } = catalog
   const searchRef = useRef<HTMLInputElement>(null)
   const [filters, setFilters] = useState(initialFilters)
   const [view, setView] = useState<LibraryView>('grid')

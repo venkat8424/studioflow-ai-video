@@ -40,6 +40,7 @@ export interface GenerationResponse extends GenerationStatusResponse {
   reference_image_url: string
   ratio: string
   review_status: ReviewStatus
+  review_comments?: string | null
   duration: number
   completed_at?: string | null
 }
@@ -47,6 +48,18 @@ export interface GenerationResponse extends GenerationStatusResponse {
 export interface GenerationListResponse {
   generations: GenerationResponse[]
   total: number
+}
+
+export interface ReviewRequest {
+  review_status: ReviewStatus
+  comments?: string | null
+}
+
+export interface ReviewResponse {
+  generation_id: string
+  review_status: ReviewStatus
+  comments?: string | null
+  reviewed_at: string
 }
 
 export interface LibraryGeneration extends Pick<

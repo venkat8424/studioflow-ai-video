@@ -5,6 +5,8 @@ import type {
   GenerationRequest,
   GenerationResponse,
   GenerationStatusResponse,
+  ReviewRequest,
+  ReviewResponse,
 } from '../types/generation'
 
 const requestFieldLabels: Record<keyof GenerationRequest, string> = {
@@ -92,6 +94,7 @@ function isGenerationResponse(body: unknown): body is GenerationResponse {
     && typeof body.ratio === 'string'
     && Number.isInteger(body.duration)
     && reviewStatuses.some((status) => status === body.review_status)
+    && isOptionalString(body.review_comments)
     && isOptionalString(body.completed_at)
 }
 
@@ -153,6 +156,42 @@ export async function getGenerationStatus(id: string, signal: AbortSignal): Prom
   const body = await readGenerationApi('/api/generations/' + encodeURIComponent(id), signal)
   if (!isStatusResponse(body)) {
     throw new Error('The generation API returned an unexpected status response.')
+  }
+  return body
+}
+
+function isReviewResponse(body: unknown): body is ReviewResponse {
+  return isRecord(body)
+    && typeof body.generation_id === 'string'
+    && reviewStatuses.some((status) => status === body.review_status)
+    && isOptionalString(body.comments)
+    && typeof body.reviewed_at === 'string'
+    && Number.isFinite(Date.parse(body.reviewed_at))
+}
+
+export async function submitGenerationReview(id: string, review: ReviewRequest): Promise<ReviewResponse> {
+  let response: Response
+  try {
+    response = await fetch('/api/generations/' + encodeURIComponent(id) + '/review', {
+      method: 'PATCH',
+      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify(review),
+    })
+  } catch (cause) {
+    throw new Error('Could not reach the review API. Check your connection and try again.', { cause })
+  }
+
+  const body: unknown = await response.json().catch(() => null)
+  if (!response.ok) {
+    const detail = isRecord(body) ? body.detail : undefined
+    throw new Error(typeof detail === 'string' && detail.trim()
+      ? detail
+      : response.status === 422
+        ? 'Check the review comments and try again.'
+        : `Could not save the review (HTTP ${response.status}).`)
+  }
+  if (!isReviewResponse(body) || body.generation_id !== id) {
+    throw new Error('The generation API returned an unexpected review response. The review could not be confirmed.')
   }
   return body
 }
