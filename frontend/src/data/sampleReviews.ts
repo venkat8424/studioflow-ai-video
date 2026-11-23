@@ -11,7 +11,8 @@ export interface ReviewGeneration extends Pick<
   'generation_id' | 'project_name' | 'shot_name' | 'status' | 'review_status' | 'ratio' | 'duration' | 'created_at' | 'prompt_text'
 > {
   thumbnail: string
-  video: string
+  video?: string
+  review_comments?: string | null
 }
 
 const shots = {
@@ -45,27 +46,29 @@ interface SampleTake {
   shot: keyof typeof shots
   review: ReviewGeneration['review_status']
   title?: string
+  comments?: string
 }
 
 const takes: readonly SampleTake[] = [
   { shot: 'aerial', review: 'unreviewed' },
   { shot: 'forest', review: 'unreviewed' },
   { shot: 'city', review: 'unreviewed' },
-  { shot: 'aerial', review: 'approved', title: 'Skyline Reveal' },
+  { shot: 'aerial', review: 'approved', title: 'Skyline Reveal', comments: 'The framing and pacing work well for the opening.' },
   { shot: 'forest', review: 'approved', title: 'Creek Establishing' },
   { shot: 'city', review: 'approved', title: 'Neon Reflections' },
   { shot: 'aerial', review: 'approved', title: 'Opening Aerial — Take 2' },
   { shot: 'forest', review: 'approved', title: 'Water Detail' },
-  { shot: 'city', review: 'rejected', title: 'City Street — Take 1' },
+  { shot: 'city', review: 'rejected', title: 'City Street — Take 1', comments: 'Slow down the camera move and keep the pedestrian in frame.' },
   { shot: 'aerial', review: 'rejected', title: 'Skyline — First Pass' },
 ]
 
-export const sampleReviews: readonly ReviewGeneration[] = takes.map(({ shot, review, title }, index) => ({
+export const sampleReviews: readonly ReviewGeneration[] = takes.map(({ shot, review, title, comments }, index) => ({
   ...shots[shot],
   generation_id: '550e8400-e29b-41d4-a716-' + String(446655440000 + index),
   shot_name: title ?? shots[shot].shot_name,
   status: 'completed',
   review_status: review,
+  review_comments: comments ?? null,
   ratio: '1280:720',
   created_at: new Date(Date.UTC(2026, 10, 20, 15 - index, 24)).toISOString(),
 }))

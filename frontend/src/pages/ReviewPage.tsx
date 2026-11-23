@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { StatusBadge } from '../components/StatusBadge'
 import { InlineVideoPlayer } from '../components/VideoPlayer'
@@ -11,9 +11,29 @@ const reviewFilters = [
   { status: 'approved', label: 'Approved' },
   { status: 'rejected', label: 'Rejected' },
 ] as const
-const projectNames = [...new Set(sampleReviews.map(({ project_name }) => project_name))].sort()
-const commentLimit = 1000
+const commentLimit = 2000
 const dateFormat = new Intl.DateTimeFormat('en-US', { dateStyle: 'medium', timeStyle: 'short' })
+
+type ReviewDecision = Exclude<ReviewStatus, 'unreviewed'>
+
+interface ReviewSubmission {
+  review_status: ReviewDecision
+  comments: string | null
+}
+
+interface ReviewPageProps {
+  isActive: boolean
+  generations?: readonly ReviewGeneration[]
+  submitReview?: (generationId: string, review: ReviewSubmission) => Promise<unknown>
+}
+
+type SubmissionState =
+  | { id: string; phase: 'saving'; decision: ReviewDecision }
+  | { id: string; phase: 'error'; message: string }
+
+function submitPreviewReview(): Promise<never> {
+  return Promise.reject(new Error('Review submission is unavailable in this preview.'))
+}
 
 interface QueueCardProps {
   generation: ReviewGeneration
@@ -79,17 +99,54 @@ function GenerationMetadata({ generation }: { generation: ReviewGeneration }) {
   )
 }
 
-export function ReviewPage({ isActive }: { isActive: boolean }) {
+export function ReviewPage({
+  isActive, generations = sampleReviews, submitReview = submitPreviewReview,
+}: ReviewPageProps) {
   const [filter, setFilter] = useState<ReviewStatus>('unreviewed')
   const [project, setProject] = useState('')
   const [selection, setSelection] = useState<string | null>(null)
   const [drafts, setDrafts] = useState<Record<string, string>>({})
-  const [notice, setNotice] = useState<{ id: string; action: 'Approve' | 'Reject' } | null>(null)
+  const [submission, setSubmission] = useState<SubmissionState | null>(null)
+  const submissionPending = useRef(false)
 
-  const projectGenerations = sampleReviews.filter((generation) => !project || generation.project_name === project)
+  const projectNames = [...new Set(generations.map(({ project_name }) => project_name))].sort()
+  const projectGenerations = generations.filter((generation) => !project || generation.project_name === project)
   const queue = projectGenerations.filter((generation) => generation.review_status === filter)
   const selected = queue.find(({ generation_id }) => generation_id === selection) ?? queue[0]
-  const comments = selected ? drafts[selected.generation_id] ?? '' : ''
+  const comments = selected ? drafts[selected.generation_id] ?? selected.review_comments ?? '' : ''
+  const selectedSubmission = submission?.id === selected?.generation_id ? submission : null
+  const actionsDisabled = selected?.status !== 'completed' || submission?.phase === 'saving'
+    || comments.length > commentLimit
+
+  function updateFilters(nextFilter: ReviewStatus, nextProject: string) {
+    const nextQueue = generations.filter((generation) => generation.review_status === nextFilter
+      && (!nextProject || generation.project_name === nextProject))
+    const nextSelection = nextQueue.find(({ generation_id }) => generation_id === selected?.generation_id)
+      ?? nextQueue[0]
+    setFilter(nextFilter)
+    setProject(nextProject)
+    setSelection(nextSelection?.generation_id ?? null)
+  }
+
+  async function handleReview(decision: ReviewDecision) {
+    if (!selected || actionsDisabled || submissionPending.current) return
+
+    const id = selected.generation_id
+    submissionPending.current = true
+    setSubmission({ id, phase: 'saving', decision })
+    try {
+      await submitReview(id, { review_status: decision, comments: comments.trim() ? comments : null })
+      setSubmission(null)
+    } catch (error) {
+      setSubmission({
+        id,
+        phase: 'error',
+        message: error instanceof Error ? error.message : 'Unable to save the review.',
+      })
+    } finally {
+      submissionPending.current = false
+    }
+  }
 
   return (
     <>
@@ -107,7 +164,7 @@ export function ReviewPage({ isActive }: { isActive: boolean }) {
                 key={status}
                 type="button"
                 aria-pressed={filter === status}
-                onClick={() => setFilter(status)}
+                onClick={() => updateFilters(status, project)}
                 className="min-h-11 cursor-pointer rounded-control px-(--space-2) text-supporting font-semibold text-text-secondary hover:bg-surface-elevated aria-pressed:bg-primary aria-pressed:text-text-primary sm:px-(--space-3) sm:text-button"
               >
                 {label} ({projectGenerations.filter((generation) => generation.review_status === status).length})
@@ -118,7 +175,7 @@ export function ReviewPage({ isActive }: { isActive: boolean }) {
             <span className="sr-only">Filter by project</span>
             <select
               value={project}
-              onChange={(event) => setProject(event.target.value)}
+              onChange={(event) => updateFilters(filter, event.target.value)}
               className="min-h-11 w-full cursor-pointer appearance-none rounded-control border border-border bg-input pr-(--space-6) pl-(--space-3)"
             >
               <option value="">All Projects</option>
@@ -151,9 +208,13 @@ export function ReviewPage({ isActive }: { isActive: boolean }) {
           {selected && (
             <div className="grid min-w-0 gap-(--space-5)">
               <div className="grid min-w-0 items-start gap-(--space-4) xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-                {isActive && (
+                {isActive && (selected.video ? (
                   <InlineVideoPlayer key={selected.generation_id} src={selected.video} poster={selected.thumbnail} label={`${selected.shot_name} video`} />
-                )}
+                ) : (
+                  <p className="grid aspect-video place-items-center rounded-control bg-background p-(--space-4) text-center text-text-secondary">
+                    Video preview is unavailable.
+                  </p>
+                ))}
                 <GenerationMetadata generation={selected} />
               </div>
 
@@ -177,6 +238,7 @@ export function ReviewPage({ isActive }: { isActive: boolean }) {
                       setDrafts((current) => ({ ...current, [selected.generation_id]: value }))
                     }}
                     maxLength={commentLimit}
+                    readOnly={selected.status !== 'completed' || selectedSubmission?.phase === 'saving'}
                     placeholder="Add your review feedback..."
                     aria-describedby="review-comment-count"
                     className="block min-h-20 w-full resize-y rounded-control px-(--space-3) py-(--space-2) placeholder:text-text-muted focus-visible:-outline-offset-2"
@@ -188,35 +250,41 @@ export function ReviewPage({ isActive }: { isActive: boolean }) {
               </div>
 
               <div>
-                <div className="flex flex-wrap justify-end gap-(--space-3)">
+                <div aria-busy={selectedSubmission?.phase === 'saving'} className="flex flex-wrap justify-end gap-(--space-3)">
                   <button
                     type="button"
-                    onClick={() => setNotice({ id: selected.generation_id, action: 'Reject' })}
-                    className="inline-flex min-h-11 grow cursor-pointer items-center justify-center gap-2 rounded-control border border-error px-(--space-4) text-button font-semibold text-error hover:bg-error/10 sm:grow-0"
+                    disabled={actionsDisabled}
+                    onClick={() => { void handleReview('rejected') }}
+                    className="inline-flex min-h-11 grow cursor-pointer items-center justify-center gap-2 rounded-control border border-error px-(--space-4) text-button font-semibold text-error enabled:hover:bg-error/10 disabled:cursor-not-allowed disabled:opacity-60 sm:grow-0"
                   >
                     <svg aria-hidden="true" viewBox="0 0 16 16" className="size-4" fill="none">
                       <path d="m4 4 8 8m0-8-8 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                     </svg>
-                    Reject
+                    {selectedSubmission?.phase === 'saving' && selectedSubmission.decision === 'rejected' ? 'Saving review...' : 'Reject'}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setNotice({ id: selected.generation_id, action: 'Approve' })}
-                    className="inline-flex min-h-11 grow cursor-pointer items-center justify-center gap-2 rounded-control bg-primary px-(--space-4) text-button font-semibold text-text-primary hover:bg-[color-mix(in_srgb,var(--color-primary-hover)_40%,var(--color-primary))] active:bg-primary-active sm:grow-0"
+                    disabled={actionsDisabled}
+                    onClick={() => { void handleReview('approved') }}
+                    className="inline-flex min-h-11 grow cursor-pointer items-center justify-center gap-2 rounded-control bg-primary px-(--space-4) text-button font-semibold text-text-primary enabled:hover:bg-[color-mix(in_srgb,var(--color-primary-hover)_40%,var(--color-primary))] enabled:active:bg-primary-active disabled:cursor-not-allowed disabled:opacity-60 sm:grow-0"
                   >
                     <svg aria-hidden="true" viewBox="0 0 16 16" className="size-4" fill="none">
                       <path d="m3 8 3 3 7-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
-                    Approve
+                    {selectedSubmission?.phase === 'saving' && selectedSubmission.decision === 'approved' ? 'Saving review...' : 'Approve'}
                   </button>
                 </div>
                 <div role="status">
-                  {notice?.id === selected.generation_id && (
+                  {selectedSubmission?.phase === 'saving' && <span className="sr-only">Saving review...</span>}
+                  {selected.status !== 'completed' && (
                     <p className="mt-(--space-2) text-supporting text-text-secondary">
-                      {notice.action} is unavailable in this preview. Review decisions are not saved.
+                      Review is available after generation completes.
                     </p>
                   )}
                 </div>
+                {selectedSubmission?.phase === 'error' && (
+                  <p role="alert" className="mt-(--space-2) text-supporting text-error">{selectedSubmission.message}</p>
+                )}
               </div>
             </div>
           )}
