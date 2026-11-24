@@ -15,7 +15,7 @@ While generative AI makes creating video content easier, production teams still 
 StudioFlow brings these activities into a single interface, bridging the gap between AI video generation and practical creative production.
 
 ## Product Demo
-[Watch StudioFlow in Action](assets/demo/Studio_Flow_Demo.mp4)
+[![Watch StudioFlow in Action](assets/mvp_screenshots/Library_Tab.png)](https://res.cloudinary.com/sjao9oud/video/upload/v1795494173/Studio_Flow_Demo.mp4)
 
 ## Screenshots
 
