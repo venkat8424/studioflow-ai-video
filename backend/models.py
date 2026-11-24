@@ -45,6 +45,7 @@ class GenerationResponse(BaseModel):
 
     status: GenerationStatus
     review_status: ReviewStatus
+    review_comments: str | None = None
 
     output_url: str | None = None
     error_message: str | None = None
