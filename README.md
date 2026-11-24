@@ -14,6 +14,20 @@ While generative AI makes creating video content easier, production teams still 
 
 StudioFlow brings these activities into a single interface, bridging the gap between AI video generation and practical creative production.
 
+## Product Demo
+[Watch StudioFlow in Action](assets/demo/Studio_Flow_Demo.mp4)
+
+## Screenshots
+
+### Create a Generation
+![Generation Form](assets/mvp_screenshots/Create_Form.png)
+
+### Generation Library
+![Generation Library](assets/mvp_screenshots/Library_Tab.png)
+
+### Review Queue
+![Review Queue](assets/mvp_screenshots/Review_Approved.png)
+
 ## 2. Problem Statement
 
 Creative production teams face several challenges when adopting generative AI:
